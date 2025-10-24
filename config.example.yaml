@@ -1,0 +1,43 @@
+# Frida Freq Configuration Template
+# Copy this file to config.yaml and customize with your settings
+
+transit:
+  # GTFS-Realtime feed URL (e.g., from your local transit agency)
+  gtfsrt_url: "https://api.example.com/gtfs-rt"
+
+  # List of stop IDs to monitor
+  stop_ids:
+    - "12345"
+
+  # Optional: Filter by specific routes (leave empty for all routes)
+  routes: []
+
+  # How often to fetch new data (seconds)
+  refresh_interval: 30
+
+display:
+  # Waveshare e-paper model (e.g., "epd2in13_V4", "epd2in9_V2")
+  model: "epd2in13_V4"
+
+  # How often to refresh display (seconds)
+  refresh_interval: 30
+
+  # Display rotation: 0, 90, 180, or 270
+  rotation: 0
+
+audio:
+  # Piper TTS voice model (e.g., "en_US-lessac-medium", "en_US-amy-medium")
+  voice: "en_US-lessac-medium"
+
+  # Volume level (0-100)
+  volume: 80
+
+  # Announcement template (available vars: {route}, {headsign}, {mins})
+  voice_template: "Next arrival for {route} to {headsign} in {mins} minutes."
+
+buttons:
+  # GPIO pin for announce button (BCM numbering)
+  announce_pin: 17
+
+  # GPIO pin for cycle routes button (BCM numbering)
+  cycle_pin: 27
