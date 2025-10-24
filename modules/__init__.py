@@ -1,0 +1,3 @@
+"""
+Frida Freq modules package
+"""
