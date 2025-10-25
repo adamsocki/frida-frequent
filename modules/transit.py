@@ -1,24 +1,102 @@
 import modules.frida as Frida
+import urllib.request
+import json
+import os
+from dotenv import load_dotenv
+import ssl
+import certifi
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class TransitManager():
     def __init__(self):
         Frida.logger.info("Create Transit Manager.")
+        self.api_key = os.getenv('WMATA_API_KEY')
+        if not self.api_key:
+            Frida.logger.error("WMATA_API_KEY not found in environment variables!")
 
 
     def init_transit_manager(self):
         Frida.logger.info("Initializing Transit Manager...")
 
+    def _fetch_wmata_data(self) -> dict:
+        """Fetch predictions from WMATA API."""
+        try:
+            Frida.logger.info("Fetching transit arrivals from WMATA API...")
+            
+            api_key = os.getenv('WMATA_API_KEY')
+            if not api_key:
+                raise ValueError("WMATA_API_KEY not found in environment variables")
+            
+            url = f"{self.api_url}?StopID={self.stop_id}"
+            
+            headers = {
+                'Cache-Control': 'no-cache',
+                'api_key': api_key,
+            }
+            
+            req = urllib.request.Request(url, headers=headers)
+            
+            # Create SSL context with certifi certificates
+            context = ssl.create_default_context(cafile=certifi.where())
+            
+            response = urllib.request.urlopen(req, context=context)
+            
+            if response.getcode() == 200:
+                data = json.loads(response.read().decode('utf-8'))
+                Frida.logger.info(f"Successfully fetched WMATA data: {len(data.get('Predictions', []))} predictions")
+                return data
+            else:
+                Frida.logger.error(f"WMATA API returned status code: {response.getcode()}")
+                return {}
+        except Exception as e:
+            Frida.logger.error(f"Error fetching WMATA data: {e}")
+            return {}
+
     def get_arrivals(self):
-        Frida.logger.info("Fetching transit arrivals from API...")
+        """Fetch and parse transit arrivals."""
+        if not self.api_key:
+            Frida.logger.error("API key not configured")
+            return []
 
-        # Simulate API call - replace with real API interaction
-        arrivals = [
-            {"route": "Bus 42", "arrival_in_min": 5},
-            {"route": "Train A", "arrival_in_min": 12},
-        ]
-
-        return arrivals
+        try:
+            # Get configuration
+            api_url = Frida.config['transit']['api_url']
+            stop_id = Frida.config['transit']['stop_id']
+            
+            self.stop_id = stop_id
+            self.api_url = api_url
+            
+            # Fetch data
+            data = self._fetch_wmata_data()
+            
+            # Transform WMATA data to internal format
+            arrivals = []
+            if 'Predictions' in data:
+                for prediction in data['Predictions']:
+                    arrivals.append({
+                        "route": prediction.get('RouteID', 'N/A'),
+                        "headsign": prediction.get('DirectionText', 'N/A'),
+                        "arrival_in_min": prediction.get('Minutes', 0),
+                    })
+            
+            Frida.logger.info(f"Parsed {len(arrivals)} arrivals from WMATA API")
+            return arrivals
+            
+        except urllib.error.HTTPError as e:
+            Frida.logger.error(f"HTTP Error fetching WMATA data: {e.code} - {e.reason}")
+            return []
+        except urllib.error.URLError as e:
+            Frida.logger.error(f"URL Error fetching WMATA data: {e.reason}")
+            return []
+        except json.JSONDecodeError as e:
+            Frida.logger.error(f"JSON parsing error: {e}")
+            return []
+        except Exception as e:
+            Frida.logger.error(f"Unexpected error fetching WMATA data: {e}")
+            return []
 
 
     def fetch_loop(self):

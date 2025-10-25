@@ -41,6 +41,9 @@ logs/
 # Configuration (contains sensitive data)
 config.yaml
 
+# Environment variables
+.env
+
 # OS
 .DS_Store
 Thumbs.db
