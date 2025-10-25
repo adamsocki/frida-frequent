@@ -4,10 +4,8 @@ Signal handlers for graceful shutdown
 import logging
 import signal
 import sys
+import modules.frida as Frida
 from typing import Optional, Callable
-
-logger = logging.getLogger(__name__)
-
 
 def setup_signal_handlers(cleanup_callback: Optional[Callable] = None):
     """
@@ -35,7 +33,7 @@ def setup_signal_handlers(cleanup_callback: Optional[Callable] = None):
             signum: The signal number that was received
             frame: Current stack frame (not used, but required by signal API)
         """
-        logger.info(f"Received signal {signum}")
+        Frida.logger.info(f"Received signal {signum}")
 
         # Call cleanup callback if one was provided
         # This allows the caller to clean up resources (display, GPIO, etc.)
@@ -43,7 +41,7 @@ def setup_signal_handlers(cleanup_callback: Optional[Callable] = None):
             try:
                 cleanup_callback()
             except Exception as e:
-                logger.error(f"Error during cleanup: {e}")
+                Frida.logger.error(f"Error during cleanup: {e}")
 
         # Exit the program gracefully
         sys.exit(0)
@@ -55,4 +53,4 @@ def setup_signal_handlers(cleanup_callback: Optional[Callable] = None):
     # SIGTERM: Sent by systemd or kill command for graceful shutdown
     signal.signal(signal.SIGTERM, signal_handler)
 
-    logger.info("Signal handlers configured for SIGINT and SIGTERM")
+    Frida.logger.info("Signal handlers configured for SIGINT and SIGTERM")

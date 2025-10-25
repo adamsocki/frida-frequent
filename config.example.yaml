@@ -1,6 +1,9 @@
 # Frida Freq Configuration Template
 # Copy this file to config.yaml and customize with your settings
 
+# Development mode - set to true to stub out hardware (display, audio, buttons)
+development_mode: true
+
 transit:
   # GTFS-Realtime feed URL (e.g., from your local transit agency)
   gtfsrt_url: "https://api.example.com/gtfs-rt"
