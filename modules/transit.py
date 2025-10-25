@@ -47,6 +47,7 @@ class TransitManager():
             if response.getcode() == 200:
                 data = json.loads(response.read().decode('utf-8'))
                 Frida.logger.info(f"Successfully fetched WMATA data: {len(data.get('Predictions', []))} predictions")
+                Frida.logger.debug(f"Raw API response: {json.dumps(data, indent=2)}")
                 return data
             else:
                 Frida.logger.error(f"WMATA API returned status code: {response.getcode()}")
@@ -75,14 +76,24 @@ class TransitManager():
             # Transform WMATA data to internal format
             arrivals = []
             if 'Predictions' in data:
+                Frida.logger.info(f"Parsing {len(data['Predictions'])} predictions from WMATA API")
                 for prediction in data['Predictions']:
-                    arrivals.append({
+                    arrival = {
                         "route": prediction.get('RouteID', 'N/A'),
                         "headsign": prediction.get('DirectionText', 'N/A'),
                         "arrival_in_min": prediction.get('Minutes', 0),
-                    })
+                    }
+                    arrivals.append(arrival)
+                    
+                    # Log each arrival with details
+                    Frida.logger.info(
+                        f"  Route {arrival['route']}: {arrival['headsign']} - "
+                        f"arriving in {arrival['arrival_in_min']} min"
+                    )
+            else:
+                Frida.logger.warning("No 'Predictions' key found in API response")
             
-            Frida.logger.info(f"Parsed {len(arrivals)} arrivals from WMATA API")
+            Frida.logger.info(f"Successfully parsed {len(arrivals)} arrivals")
             return arrivals
             
         except urllib.error.HTTPError as e:

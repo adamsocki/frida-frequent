@@ -1,11 +1,10 @@
 # CLAUDE.md
 
-This file prov
-ides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project: Frida Freq - Transit Art Display
 
-A Raspberry Pi-powered transit arrival display featuring an e-paper screen and Billy-Bass-style audio announcements. Fetches GTFS-Realtime data, displays arrivals on e-paper, and announces them via TTS.
+A Raspberry Pi-powered transit arrival display featuring an e-paper screen and Billy-Bass-style audio announcements. Currently implements WMATA API integration for Washington DC Metro bus arrivals.
 
 ## Running the Application
 
@@ -17,73 +16,75 @@ python main.py
 # 1. Setup logging to logs/frida-freq.log and stdout
 # 2. Setup signal handlers for graceful shutdown (SIGINT, SIGTERM)
 # 3. Load config from config.yaml
-# 4. Initialize hardware modules (currently returns False - stub)
+# 4. Initialize hardware modules (display, transit manager)
+# 5. Start background threads for fetching and displaying transit data
 ```
 
 ## Development Environment
 
 - **Runtime**: Python 3.11+
 - **Package Manager**: uv (uv.lock present) or pip
-- **Dependencies**: See pyproject.toml (currently only pyyaml)
+- **Dependencies**: pyyaml, python-dotenv, certifi (see [pyproject.toml](pyproject.toml))
 - **Target Platform**: Raspberry Pi OS (Debian-based)
+- **Environment**: Requires `.env` file with `WMATA_API_KEY` for transit data
 
 ## Current Architecture
 
-### Functional/Procedural Design
+### Hybrid Functional/Class-Based Design
 
-The codebase uses a **functional approach** with module-level state rather than OOP. This is documented in `functional_main.md` which contains a detailed reference implementation.
+The codebase uses a **hybrid approach** combining module-level state management (in [modules/frida.py](modules/frida.py)) with manager classes for individual components:
 
 **Key architectural decisions:**
-- Module-level global state for shared data (transit_data, current_route_index, etc.)
+- Module-level global state in [modules/frida.py](modules/frida.py) (transit_data, current_route_index, etc.)
+- Manager classes for encapsulated functionality (TransitManager, DisplayManager)
 - Threading with locks for concurrency (data_lock, shutdown_event)
 - Separate background threads for fetch and display loops
-- Event-driven button handlers as callbacks
-- Graceful degradation: display is critical, audio/buttons are optional
+- Development mode flag to stub out hardware for local testing
 
-### Current Module Structure
+### Module Structure
 
 ```
 modules/
 ├── __init__.py
 ├── config.py           # YAML configuration loading
 ├── logging_config.py   # Centralized logging setup
-├── signal_handlers.py  # SIGINT/SIGTERM handlers with cleanup callbacks
-└── frida.py           # Hardware/module initialization (stub)
+├── signal_handlers.py  # SIGINT/SIGTERM handlers
+├── frida.py           # Central state + orchestration (init, run, cleanup)
+├── transit.py         # TransitManager - WMATA API integration
+└── display.py         # DisplayManager - e-paper display (stubbed in dev mode)
 ```
 
-**config.py** (`modules/config.py:9`):
-- `load_config(config_path: Path = Path("config.yaml"))` - Loads YAML config, exits if missing
-- Returns dict with configuration structure
+**[modules/frida.py](modules/frida.py)** - Central orchestration module:
+- Global state: `transit_data`, `current_route_index`, `data_lock`, `shutdown_event`, `config`, `DEVELOPMENT_MODE`
+- Manager instances: `transit_manager`, `display_manager`, `audio_manager`, `input_manager`
+- `init_frida()` - Initialize all managers
+- `run_frida()` - Start background threads and monitor
+- `cleanup_frida()` - Graceful shutdown
+- State is shared via module-level imports: `import modules.frida as Frida`
 
-**logging_config.py** (`modules/logging_config.py:37`):
-- `setup_logging(log_level: str = "INFO", log_file: str = "logs/frida-freq.log")` - Configures logging
-- Creates log directory if needed
-- Logs to both stdout and file
-- Returns logger named 'frida_freq'
-- Other modules get logger via: `logging.getLogger('frida_freq')`
+**[modules/transit.py](modules/transit.py)** - WMATA API integration:
+- `TransitManager` class handles fetching real-time bus predictions
+- Uses WMATA NextBusService API (not generic GTFS-RT)
+- `get_arrivals()` returns list of dicts: `[{route, headsign, arrival_in_min}, ...]`
+- `fetch_loop()` runs in background thread, updates shared `transit_data`
+- Requires `WMATA_API_KEY` environment variable from `.env`
 
-**signal_handlers.py** (`modules/signal_handlers.py:12`):
-- `setup_signal_handlers(cleanup_callback: Optional[Callable] = None)` - Registers SIGINT/SIGTERM handlers
-- Calls optional cleanup callback before exit
-- Allows graceful shutdown for resource cleanup (display, GPIO, etc.)
-
-**frida.py** (`modules/frida.py:3`):
-- `init_frida() -> bool` - Initialize hardware and software modules (currently stub returning False)
-- Should initialize: transit_fetcher, display_manager, audio_manager, input_manager (not yet implemented)
-
-**main.py**:
-- Entry point that orchestrates: logging → signal handlers → config → initialization
-- Currently exits with code 1 since init_frida() returns False
+**[modules/display.py](modules/display.py)** - E-paper display manager:
+- `DisplayManager` class (currently stubbed for development)
+- `init_display_manager(model, rotation)` - Hardware initialization
+- Respects `DEVELOPMENT_MODE` flag from config
+- `display_loop()` will run in background thread (currently empty)
 
 ## Configuration Format
 
-Expected `config.yaml` structure:
+[config.yaml](config.yaml) structure:
 
 ```yaml
+development_mode: true  # Set false for production on Pi
+
 transit:
-  gtfsrt_url: "https://api.example.com/gtfs-rt"
-  stop_ids: ["12345"]
-  routes: ["A"]  # optional filter
+  api_url: "https://api.wmata.com/NextBusService.svc/json/jPredictions"
+  stop_id: "1001195"  # Single WMATA stop ID
   refresh_interval: 30
 
 display:
@@ -101,46 +102,62 @@ buttons:
   cycle_pin: 27
 ```
 
-## Modules to Implement
+**Important**: Copy [config.example.yaml](config.example.yaml) to `config.yaml` and customize. Create `.env` with `WMATA_API_KEY=your_key_here`.
 
-See `functional_main.md` for detailed reference implementation. Core modules needed:
+## Module Access Pattern
 
-1. **Transit Module** (`modules/transit.py`) - GTFS-RT fetching/parsing
-2. **Display Module** (`modules/display.py`) - Waveshare e-paper rendering
-3. **Audio Module** (`modules/audio.py`) - Piper TTS/eSpeak
-4. **Input Module** (`modules/input.py`) - GPIO button handling via gpiozero
+Other modules access shared state via:
+```python
+import modules.frida as Frida
+
+# Access state
+with Frida.data_lock:
+    arrivals = Frida.transit_data
+
+# Access config
+api_url = Frida.config['transit']['api_url']
+
+# Access logger
+Frida.logger.info("Message")
+
+# Check development mode
+if Frida.DEVELOPMENT_MODE:
+    # stub hardware
+```
 
 ## Threading Model
 
-From `functional_main.md`:
-- **fetch_loop()**: Background thread periodically fetching transit data
-- **display_loop()**: Background thread updating e-paper display
-- **Main thread**: Monitors and waits for shutdown signal
-- **Synchronization**: Use `data_lock` (threading.Lock) for shared state, `shutdown_event` (threading.Event) for coordination
+Implemented in [modules/frida.py](modules/frida.py):
+- **fetch_loop()**: Background thread in `transit_manager.fetch_loop()` - fetches transit data periodically
+- **display_loop()**: Background thread in `display_manager.display_loop()` - updates e-paper display
+- **Main thread**: Waits for shutdown signal in `run_frida()`
+- **Synchronization**: `data_lock` (threading.Lock) protects shared state, `shutdown_event` (threading.Event) coordinates shutdown
+
+## Implementation Status
+
+**Implemented:**
+- Core infrastructure (logging, config, signal handling)
+- WMATA API integration with real-time bus predictions
+- Threading model with background fetch loop
+- Development mode for testing without hardware
+- Manager-based architecture for display (stubbed)
+
+**TODO:**
+- Complete display rendering implementation (Waveshare e-paper)
+- Audio module (Piper TTS)
+- Input module (GPIO buttons)
+- Button handlers for announce and cycle actions
 
 ## Hardware Details
 
 ### Components
 - **Compute**: Raspberry Pi Zero 2 W or Pi 4
 - **Display**: Waveshare 2.13" or 2.9" SPI e-paper
-- **Audio**: MAX98357A I2S amp (GPIO18/19/21) or USB audio
-- **Input**: GPIO buttons (announce + cycle)
-
-### Wiring
-
-**E-paper (SPI)**:
-- 3V3, GND, MOSI, SCLK, CE0, DC, RST, BUSY
-
-**Buttons**:
-- GPIO pins with pull-up resistors to GND
-
-**I2S Audio**:
-- LRC = GPIO18, BCLK = GPIO19, DIN = GPIO21
-- +5V and GND to amplifier
-- 100µF capacitor near amp recommended
+- **Audio**: MAX98357A I2S amp or USB audio (optional)
+- **Input**: GPIO buttons (optional)
 
 ### Critical vs. Optional Hardware
-- **Display**: Critical - fail if unavailable
+- **Display**: Critical - `init_frida()` fails if unavailable (unless `DEVELOPMENT_MODE = true`)
 - **Audio**: Optional - log warning but continue
 - **Buttons**: Optional - log warning but continue
 - **Network/Transit API**: Optional - keep old data and retry
@@ -148,48 +165,17 @@ From `functional_main.md`:
 ## Error Handling Philosophy
 
 - **Graceful degradation**: Keep system running even if some components fail
-- **Retry with backoff**: For network/API failures
-- **Preserve lifespan**: Reasonable e-paper refresh rates (partial refresh preferred)
+- **Retry with backoff**: For network/API failures (keep old data, retry on next interval)
+- **Preserve lifespan**: Reasonable e-paper refresh rates
 - **Logging levels**:
-  - INFO: Normal operations
+  - INFO: Normal operations, successful fetches
   - WARNING: Recoverable issues (API timeout, retrying)
   - ERROR: Serious problems (can't initialize critical hardware)
-  - DEBUG: Detailed troubleshooting
-
-## Code Style
-
-- Follow PEP 8
-- Use type hints (as shown in existing modules)
-- Docstrings for public functions
-- Keep modules focused and decoupled
-
-## Planned Directory Structure
-
-```
-frida_freq/
-├── main.py
-├── pyproject.toml
-├── config.yaml (gitignored)
-├── modules/
-│   ├── config.py, logging_config.py, signal_handlers.py, frida.py
-│   ├── transit.py, display.py, audio.py, input.py (to implement)
-├── tests/ (to create)
-├── assets/ (fonts, sounds, images)
-├── cad/ (3D models)
-└── systemd/ (service unit)
-```
-
-## Future Enhancements
-- Motion: Add servo/stepper for "singing fish" effect
-- Sound effects: Chimes, door closing sounds, station ambience
-- Multiple stops: Rotate through several locations
-- Web interface: Configuration and monitoring
-- Offline mode: Display static art when transit unavailable
+  - DEBUG: Detailed API responses, troubleshooting
 
 ## References
 
-- **Detailed functional architecture**: See `functional_main.md`
-- **GTFS-Realtime**: https://gtfs.org/realtime/
+- **Detailed functional architecture**: See [functional_main.md](functional_main.md) for reference implementation
+- **WMATA API**: https://developer.wmata.com/
 - **Waveshare e-paper**: https://www.waveshare.com/wiki/E-Paper
 - **Piper TTS**: https://github.com/rhasspy/piper
-- **GPIO Zero**: https://gpiozero.readthedocs.io/
